@@ -1,118 +1,143 @@
-#include "file.h"
-#include <unistd.h>
-#include <string.h>
+#include "ipc_test.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <fcntl.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <iostream> 
+#include <sys/ipc.h> 
+#include <sys/shm.h> 
+#include <sys/msg.h>
 
-const int MAX_SIZE = 200;
+const int MAX_SIZE = 100;
 
-/*
-    Create file 
-    Be careful when you set permission about your file.
-*/
-int create_file(char* filename) {
-    int _file = open(filename, O_RDWR|O_CREAT, 0644);
-    close(_file);
-    return 0;
-}
+typedef struct {
+    long mtype;
+    char mtext[MAX_SIZE];
+} _msgbuf;
 
-/*
-    Read 'size' bytes in file and print it.
-    If there is no such file, print ("error occured\n").
-*/
-
-void read_file(char* filename, int size) {
-    int _file = open(filename, O_RDONLY);
-    if (_file < 0){
-        printf("error occured\n");
-        return;
-    }
-    char buf[MAX_SIZE];
-    memset(buf, 0, sizeof(buf));
-    read(_file, buf, size);
-    printf("%d ", size);
-    printf("%s", buf);
-    printf("\n");
-    close(_file);
-}
 
 /*
-	Open file and write char array tmp to your file.
+    Send a message via message queue
+    msg: Message to be sent
+    prj_id: ID to create unique ipc key
 */
-void write_file(char* filename, char* tmp) {
-    int _file = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-    int size = strlen(tmp);
-    write(_file, tmp, size);
+void msg_queue_send(char *msg, int prj_id) {
+    /* 
+    Write your code here
+    */
+    // make file - copied from my code of HW3
+    int _file = open("CS230", O_RDWR|O_CREAT, 0644);
     close(_file);
-}
-
-/* 
-    Copy the contents of source file to the dest file back and forth as much as n bytes.For example, suppose "1234abcd\n" is the content of the source file. Then "1a2b3c4d\n" will be the content of the dest file. You sholud use lseek() function.
-    If there is no dest file, create it by using "create_file" funtion
-*/
-void weird_copy_file(char* source, char* dest, int n) {
-    int _file = open(source, O_RDONLY);
-    char buf[MAX_SIZE];
-    memset(buf, 0, sizeof(buf));
-    for (int i=0; i<n; i++){
-        lseek(_file, i, SEEK_SET);
-        read(_file, buf+(2*i), 1);
-        lseek(_file, n-1, SEEK_CUR);
-        read(_file, buf+(2*i+1), 1);
-    }
-    close(_file);
-    write_file(dest, buf);
+    
+    key_t key = ftok("CS230", prj_id); // create key
+    int msgid = msgget(key, IPC_CREAT|0644); //msgid
+    
+    _msgbuf mbuf;
+    mbuf.mtype = 1;
+    strcpy(mbuf.mtext, msg); // copy message into msgbuf
+    
+    msgsnd(msgid, &mbuf, MAX_SIZE, IPC_NOWAIT); //send
 }
 
 /*
-    Get 'command' as an input,
-    and execute proper functionalities according to command line.
+    Receive a message via message queue
+    The program may hang due to no data, consider to handle this case
+    Be sure the IPC keys of two process are them same
+    Expected output: Message obtained from queue
 */
 
-const char* wsp = " \n\t";
-char *npt;
+char ret[100];
 
-void file(char* command) {
-    char copied[MAX_SIZE];
-    strcpy(copied, command);
-    char *res;
-    res = strtok_r(copied, wsp, &npt);
-    if (strcmp(res, "create") == 0){
-        char* name = strtok_r(NULL, wsp, &npt);
-        create_file(name);
-        return;
-    }
-    if (strcmp(res, "read") == 0){
-        char *name = strtok_r(NULL, wsp, &npt);
-        char *l = strtok_r(NULL, wsp, &npt);
-        int len = 0;
-        int n = strlen(l);
-        for (int i=0; i<n; i++){
-            len *= 10;
-            len += (int)(l[i] - '0');
-        }
-        read_file(name, len);
-        return;
-    }
-    if (strcmp(res, "write") == 0){
-        char *name = strtok_r(NULL, wsp, &npt);
-        char *to_write = strtok_r(NULL, wsp, &npt);
-        write_file(name, to_write);
-        return;
-    }
-    if (strcmp(res, "copy") == 0){
-        char *name1 = strtok_r(NULL, wsp, &npt);
-        char *name2 = strtok_r(NULL, wsp, &npt);
-        char *l = strtok_r(NULL, wsp, &npt);
-        int len = 0;
-        int n = strlen(l);
-        for (int i=0; i<n; i++){
-            len *= 10;
-            len += (int)(l[i] - '0');
-        }
-        weird_copy_file(name1, name2, len);
-        return;
+char* msg_queue_rcv(int prj_id) {
+    /* 
+    Write your code here
+    */
+    key_t key = ftok("CS230", prj_id); // create key
+    int msgid = msgget(key, 0);
+    
+    _msgbuf mbuf;
+    msgrcv(msgid, &mbuf, MAX_SIZE, 0, IPC_NOWAIT);
+    
+    strcpy(ret, mbuf.mtext);
+    return ret;
+}
+
+/*
+    Send a message via shared memory
+*/
+void shm_mem_send(char *msg, int prj_id) {
+    /* 
+    Write your code here
+    */
+    int _file = open("CS230", O_RDWR|O_CREAT, 0644);
+    close(_file);
+    
+    key_t key = ftok("CS230", prj_id); // create key
+    int shmid = shmget(key, MAX_SIZE, IPC_CREAT|0644);
+    
+    char *shmaddr = (char*)shmat(shmid, NULL, 0);
+    strcpy(shmaddr, msg);
+    shmdt(shmaddr); // release
+}
+
+/*
+    Receive a message via shared memory
+    The program may hang due to no data, consider to handle this case
+    Expected output: Message obtained from shared memory
+*/
+char* shm_mem_rcv(int prj_id) {
+    /* 
+    Write your code here
+    */
+    key_t key = ftok("CS230", prj_id); // create key
+    int shmid = shmget(key, MAX_SIZE, 0);
+    
+    char *shmaddr = (char*)shmat(shmid, NULL, 0);
+    strcpy(ret, shmaddr);
+    shmdt(shmaddr); // release
+    return ret;
+}
+
+/*
+    General function for IPC sending
+    Recommended to not modify this function
+*/
+void ipc_send(int ipc_type, char *msg, int prj_id) {
+    switch (ipc_type) {
+    case MSG_QUEUE:
+        msg_queue_send(msg, prj_id);
+        break;
+    case SHM_MEM:
+        shm_mem_send(msg, prj_id);
+        break;
+    default:
+        printf("Wrong IPC type! \n");
+        break;
     }
 }
+
+/*
+    General function for IPC receiving
+    Recommended to not modify this function
+*/
+char* ipc_rcv(int ipc_type, int prj_id) {
+    char* rcv = NULL;
+    
+    switch (ipc_type) {
+    case MSG_QUEUE:
+        rcv = msg_queue_rcv(prj_id);
+        break;
+    case SHM_MEM:
+        rcv = shm_mem_rcv(prj_id);
+        break;
+    default:
+        printf("Wrong IPC type! \n");
+        break;
+    }
+    
+    return rcv;
+}
+
+
