@@ -38,7 +38,7 @@ void msg_queue_send(char *msg, int prj_id) {
     mbuf.mtype = 1;
     strcpy(mbuf.mtext, msg); // copy message into msgbuf
     
-    msgsnd(msgid, &mbuf, MAX_SIZE, IPC_NOWAIT);
+    msgsnd(msgid, &mbuf, MAX_SIZE, IPC_NOWAIT); //send
 }
 
 /*
@@ -58,8 +58,9 @@ char* msg_queue_rcv(int prj_id) {
     int msgid = msgget(key, 0);
     
     _msgbuf mbuf;
-    msgrcv(msgid, &mbuf, MAX_SIZE, 0, IPC_NOWAIT);
-    
+    if (-1 == msgrcv(msgid, &mbuf, MAX_SIZE, 0, IPC_NOWAIT)){
+        return NULL;
+    }
     strcpy(ret, mbuf.mtext);
     return ret;
 }
@@ -94,9 +95,12 @@ char* shm_mem_rcv(int prj_id) {
     key_t key = ftok("CS230", prj_id); // create key
     int shmid = shmget(key, MAX_SIZE, 0);
     
-    char *shmaddr = (char*)shmat(shmid, NULL, 0);
-    strcpy(ret, shmaddr);
-    shmdt(shmaddr);
+    void *shmaddr = shmat(shmid, NULL, 0);
+    if (shmaddr == (void*) -1) {
+        return NULL;
+    }
+    strcpy(ret, (char *)shmaddr);
+    shmdt(shmaddr); // release
     return ret;
 }
 
@@ -139,5 +143,3 @@ char* ipc_rcv(int ipc_type, int prj_id) {
     
     return rcv;
 }
-
-
